@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import './globals.css';
 
-const SERVER = 'http://localhost:3001';
+const SERVER = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 const CHIPS_PER_USD = 100;
 const SC = { s:'#1a1a2e', h:'#c41230', d:'#c41230', c:'#1a1a2e' };
 const SS = { s:'\u2660', h:'\u2665', d:'\u2666', c:'\u2663' };
