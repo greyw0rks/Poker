@@ -1,21 +1,42 @@
 {
-  "name": "poker-frontend",
+  "name": "@greyw0rks/poker-frontend",
   "version": "1.0.0",
   "private": true,
+  "description": "No-Limit Texas Hold'em frontend for Celo MiniPay",
   "scripts": {
-    "dev":   "next dev",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
+  "keywords": [
+    "poker",
+    "celo",
+    "minipay",
+    "web3",
+    "nextjs"
+  ],
+  "author": "greyw0rks",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "next":      "14.2.3",
-    "react":     "18.3.1",
+    "next": "14.2.3",
+    "react": "18.3.1",
     "react-dom": "18.3.1",
     "socket.io-client": "^4.7.0",
-    "viem":      "^2.17.0"
+    "viem": "^2.17.0"
   },
   "devDependencies": {
-    "eslint":             "^8",
+    "eslint": "^8",
     "eslint-config-next": "14.2.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/greyw0rks/poker-frontend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/greyw0rks/poker-frontend/issues"
+  },
+  "homepage": "https://github.com/greyw0rks/poker-frontend#readme"
 }
