@@ -1,7 +1,7 @@
 {
   "name": "@greyw0rks/poker-frontend",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
   "description": "No-Limit Texas Hold'em frontend for Celo MiniPay",
   "scripts": {
     "dev": "next dev",
