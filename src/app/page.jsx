@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import './globals.css';
 
-const SERVER = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+const SERVER = 'http://localhost:3001';
 const CHIPS_PER_USD = 100;
 const SC = { s:'#1a1a2e', h:'#c41230', d:'#c41230', c:'#1a1a2e' };
 const SS = { s:'\u2660', h:'\u2665', d:'\u2666', c:'\u2663' };
@@ -268,41 +268,49 @@ function useMiniPay(){
   useEffect(()=>{if(typeof window!=='undefined'&&window.ethereum?.isMiniPay)connect();},[connect]);
 
   // Approve cUSD spend + joinTable on contract
+  // buyIn: approve cUSD spend then joinTable on-chain
+  // onChainTableId: the numeric table ID from the smart contract
   const buyIn = useCallback(async(onChainTableId, amountUSD, playerAddress) => {
     if(!window.ethereum || !playerAddress) return { ok:false, error:'No wallet' };
-    const CUSD    = process.env.NEXT_PUBLIC_CUSD_ADDRESS    || '0x765DE816845861e75A25fCA122bb6898B8B1282a';
-    const CONTRACT= process.env.NEXT_PUBLIC_CONTRACT_ADDRESS|| '0x4EdB68a7EE036D7438f6E8fcBE43b35539e55Ec3';
+    if(!onChainTableId || onChainTableId <= 0) return { ok:false, error:'Invalid table ID' };
 
-    // Amount in wei (18 decimals)
-    const amtWei = BigInt(Math.round(amountUSD * 1e18)).toString(16).padStart(64,'0');
+    const CUSD     = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
+    const CONTRACT = '0x4EdB68a7EE036D7438f6E8fcBE43b35539e55Ec3';
+
+    // Encode amount as 32-byte hex (18 decimals)
+    const amtWei     = BigInt(Math.round(amountUSD * 1e18)).toString(16).padStart(64,'0');
     const tableIdHex = BigInt(onChainTableId).toString(16).padStart(64,'0');
 
-    // approve(CONTRACT, amount) selector = 0x095ea7b3
-    const approveData = '0x095ea7b3' + CONTRACT.toLowerCase().replace('0x','').padStart(64,'0') + amtWei;
-    // joinTable(tableId, amount) selector = 0x17f12247
-    const joinData    = '0x17f12247' + tableIdHex + amtWei;
+    // approve(address spender, uint256 amount) — selector 0x095ea7b3
+    const approveData = '0x095ea7b3'
+      + CONTRACT.toLowerCase().replace('0x','').padStart(64,'0')
+      + amtWei;
+
+    // joinTable(uint256 tableId, uint256 amount) — selector 0x17f12247
+    const joinData = '0x17f12247' + tableIdHex + amtWei;
 
     try {
+      // Step 1: Approve cUSD
       setTxStatus('approving');
       const approveTx = await window.ethereum.request({
         method: 'eth_sendTransaction',
-        params: [{ from: playerAddress, to: CUSD, data: approveData }],
+        params: [{ from: playerAddress, to: CUSD, data: approveData, type: '0x0' }],
       });
-      // Wait for approve
       await waitForTx(approveTx);
 
+      // Step 2: Join table
       setTxStatus('joining');
       const joinTx = await window.ethereum.request({
         method: 'eth_sendTransaction',
-        params: [{ from: playerAddress, to: CONTRACT, data: joinData }],
+        params: [{ from: playerAddress, to: CONTRACT, data: joinData, type: '0x0' }],
       });
       await waitForTx(joinTx);
 
       setTxStatus('done');
-      return { ok:true, hash:joinTx };
+      return { ok: true, hash: joinTx };
     } catch(e) {
       setTxStatus('error');
-      return { ok:false, error: e.message };
+      return { ok: false, error: e.message };
     }
   },[]);
 
@@ -426,11 +434,16 @@ function DifficultyModal({username,address,wallet,onStarted,onClose}){
 
         // We need the on-chain tableId — backend returns it if available
         // For now, trigger approve+join flow if wallet exists
-        if(wallet.buyIn) {
-          const txResult = await wallet.buyIn(d.onChainTableId||1, diff.buyIn, address);
-          if(!txResult.ok && txResult.error !== 'No wallet') {
-            console.warn('TX failed:', txResult.error);
-            // Continue anyway for dev mode
+        // Only do on-chain buy-in if we have a real wallet AND a valid onChainTableId
+        if(wallet.buyIn && address && d.onChainTableId && d.onChainTableId > 0) {
+          const txResult = await wallet.buyIn(d.onChainTableId, diff.buyIn, address);
+          if(!txResult.ok) {
+            if(txResult.error === 'User rejected the request.') {
+              setLoading(null);
+              return; // User cancelled — don't enter game
+            }
+            console.warn('TX warning:', txResult.error);
+            // Continue for dev/watch mode
           }
         }
       }
@@ -710,14 +723,7 @@ function Lobby({address,username,wallet,onJoined}){
 // ── CONNECT ───────────────────────────────────────────────────────────────────
 function ConnectScreen({wallet,onDone}){
   const [name,setName]=useState('');
-  useEffect(()=>{
-    const s=localStorage.getItem('poker_username');
-    if(s) setName(s);
-    // Only auto-connect on MiniPay — desktop users must click the button
-    if(wallet.address && wallet.isMiniPay){
-      onDone(wallet.address, s||'Player');
-    }
-  },[wallet.address, wallet.isMiniPay]);
+  useEffect(()=>{const s=localStorage.getItem('poker_username');if(s)setName(s);if(wallet.address)onDone(wallet.address,localStorage.getItem('poker_username')||'Player');},[wallet.address]);
   const handle=async()=>{if(!name.trim())return;localStorage.setItem('poker_username',name.trim());const addr=await wallet.connect();onDone(addr||null,name.trim());};
   return <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100dvh',background:'linear-gradient(135deg,#0a0f1a 0%,#0f172a 50%,#1a0a2e 100%)',padding:'2rem',gap:'1.5rem',textAlign:'center'}}>
     <AnimStyles/>
@@ -748,11 +754,7 @@ export default function App(){
   const [buyInUSD,setBuyInUSD]=useState(0.2);
   const wallet=useMiniPay();
 
-  useEffect(()=>{
-    const u=localStorage.getItem('poker_username');
-    if(u) setUsername(u); // restore name but ALWAYS show connect screen
-    // Only auto-skip on MiniPay (wallet connects automatically)
-  },[]);
+  useEffect(()=>{const u=localStorage.getItem('poker_username');if(u){setUsername(u);setScreen('lobby');}},[]);
 
   const handleJoined=(tid,hpid,buyIn)=>{setTableId(tid);setHumanPlayerId(hpid||null);setBuyInUSD(buyIn||0.2);setScreen('game');};
 
