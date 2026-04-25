@@ -311,7 +311,19 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,onBack,onPla
   const [gameOver,setGameOver]=useState(null);
   const [timer,setTimer]=useState(30);
   const prevRef=useRef(null),timerRef=useRef(null),joinedRef=useRef(false),initChips=useRef(100);
-  useEffect(()=>{const f=()=>fetch(`${SERVER}/tables/${tableId}`).then(r=>r.json()).then(setInfo).catch(()=>{});f();const t=setInterval(()=>{if(!gs)f();},1500);return()=>clearInterval(t);},[tableId,gs]);
+  useEffect(()=>{
+    const f=()=>fetch(`${SERVER}/tables/${tableId}`).then(r=>{
+      if(r.status===404){
+        // Table gone (backend restart) — stop polling and return to lobby
+        clearInterval(t);
+        onBack();
+        return;
+      }
+      return r.json().then(setInfo);
+    }).catch(()=>{});
+    f();
+    const t=setInterval(()=>{if(!gs)f();},1500);
+    return()=>clearInterval(t);},[tableId,gs]);
   useEffect(()=>{if(joinedRef.current)return;joinedRef.current=true;setTimeout(()=>{join({tableId,name:username,address:address||('0xDEV_'+Math.random().toString(36).slice(2,8)),buyInUSD:buyInUSD||0.2,humanPlayerId});},600);},[]);
   useEffect(()=>{if(!gs)return;clearInterval(timerRef.current);setTimer(30);timerRef.current=setInterval(()=>setTimer(t=>t<=1?(clearInterval(timerRef.current),0):t-1),1000);return()=>clearInterval(timerRef.current);},[gs?.actionIdx,gs?.state]);
   useEffect(()=>{
