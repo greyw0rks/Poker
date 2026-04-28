@@ -291,7 +291,24 @@ function useMiniPay(){
       setTxStatus('done');return{ok:true,hash:joinTx};
     }catch(e){setTxStatus('error');return{ok:false,error:e.message};}
   },[]);
-  return{address,isMiniPay,loading,error,connect,buyIn,txStatus,setTxStatus};
+  // Direct ERC-20 transfer to the game contract — no onChainTableId needed.
+  // The backend verifies this tx hash before seating the player.
+  const payBuyIn=useCallback(async(amountUSD,playerAddress)=>{
+    if(!window.ethereum||!playerAddress)return{ok:false,error:'No wallet'};
+    const CONTRACT=process.env.NEXT_PUBLIC_CONTRACT_ADDRESS||'0x4EdB68a7EE036D7438f6E8fcBE43b35539e55Ec3';
+    const CUSD='0x765DE816845861e75A25fCA122bb6898B8B1282a';
+    const amtWei=BigInt(Math.round(amountUSD*1e18)).toString(16).padStart(64,'0');
+    // ERC-20 transfer(address,uint256) selector: 0xa9059cbb
+    const data='0xa9059cbb'+CONTRACT.toLowerCase().replace('0x','').padStart(64,'0')+amtWei;
+    try{
+      setTxStatus('paying');
+      const txHash=await window.ethereum.request({method:'eth_sendTransaction',params:[{from:playerAddress,to:CUSD,data,type:'0x0'}]});
+      await waitForTx(txHash);
+      setTxStatus('done');
+      return{ok:true,hash:txHash};
+    }catch(e){setTxStatus('error');return{ok:false,error:e.message};}
+  },[]);
+  return{address,isMiniPay,loading,error,connect,buyIn,payBuyIn,txStatus,setTxStatus};
 }
 
 async function waitForTx(hash,maxWait=30000){
@@ -391,12 +408,20 @@ function DifficultyModal({username,address,wallet,onStarted,onClose}){
   const start=async(diff)=>{
     setLoading(diff.id);
     try{
-      const r=await fetch(`${SERVER}/rooms/create`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hostName:username,difficulty:diff.id,address:address||'0xDEV'})});
-      const d=await r.json();if(!d.tableId)throw new Error('No tableId');
-      if(address&&window.ethereum&&wallet?.buyIn&&d.onChainTableId&&d.onChainTableId>0){
-        const tx=await wallet.buyIn(d.onChainTableId,diff.buyIn,address);
-        if(!tx.ok){if(tx.error==='User rejected the request.'){setLoading(null);return;}console.warn('TX:',tx.error);}
+      // 1. Collect buy-in on-chain FIRST — wallet prompts the player here
+      let txHash=null;
+      if(address&&window.ethereum&&wallet?.payBuyIn){
+        const tx=await wallet.payBuyIn(diff.buyIn,address);
+        if(!tx.ok){
+          if(tx.error==='User rejected the request.'){setLoading(null);return;}
+          throw new Error('Payment failed: '+tx.error);
+        }
+        txHash=tx.hash;
       }
+      // 2. Create room — backend verifies txHash before seating the player
+      const r=await fetch(`${SERVER}/rooms/create`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hostName:username,difficulty:diff.id,address:address||'0xDEV',txHash})});
+      const d=await r.json();
+      if(!d.tableId)throw new Error(d.error||'No tableId');
       onStarted(d.tableId,d.humanPlayerId,diff.buyIn,diff);
     }catch(e){console.error(e);}finally{setLoading(null);}
   };
