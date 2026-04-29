@@ -340,7 +340,7 @@ async function waitForTx(hash,maxWait=30000){
 }
 
 // ─── GameTable ────────────────────────────────────────────────────────────────
-function GameTable({tableId,address,username,humanPlayerId,buyInUSD,onBack,onPlayAgain}){
+function GameTable({tableId,address,username,humanPlayerId,buyInUSD,wallet,onBack,onPlayAgain}){
   const{gs,holeCards,lastEvent,live,send,join,myPlayerIdx:sockIdx}=useSocket(tableId);
   const [info,setInfo]=useState(null);
   const [anim,setAnim]=useState({});
@@ -348,6 +348,32 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,onBack,onPla
   const [gameOver,setGameOver]=useState(null);
   const [timer,setTimer]=useState(30);
   const prevRef=useRef(null),timerRef=useRef(null),joinedRef=useRef(false),initChips=useRef(100);
+  const [connectStatus,setConnectStatus]=useState('idle'); // idle | connecting | paying | done | error
+  const [connectErr,setConnectErr]=useState('');
+
+  const connectAndBuyIn=useCallback(async()=>{
+    setConnectStatus('connecting');
+    setConnectErr('');
+    try{
+      // 1. Ensure wallet is connected
+      let addr=address;
+      if(!addr){
+        addr=await wallet?.connect?.();
+        if(!addr){setConnectStatus('error');setConnectErr('Wallet connection failed.');return;}
+      }
+      // 2. Pay buy-in (prompts MiniPay)
+      setConnectStatus('paying');
+      const tokenAddr=TOKENS[DEFAULT_TOKEN].address;
+      const tx=await wallet.payBuyIn(buyInUSD||0.2,addr,tokenAddr);
+      if(!tx.ok){
+        if(tx.error==='User rejected the request.'){setConnectStatus('idle');return;}
+        setConnectStatus('error');setConnectErr('Payment failed: '+tx.error);return;
+      }
+      // 3. Verify on backend + join table socket
+      setConnectStatus('done');
+      join({tableId,name:username,address:addr,buyInUSD:buyInUSD||0.2,txHash:tx.hash});
+    }catch(e){setConnectStatus('error');setConnectErr(e.message);}
+  },[address,wallet,tableId,username,buyInUSD,join]);
   useEffect(()=>{
     const f=()=>fetch(`${SERVER}/tables/${tableId}`).then(r=>{
       if(r.status===404){
@@ -392,6 +418,19 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,onBack,onPla
         <span style={{color:G.muted,fontSize:'.78rem'}}>{numP}/6</span>
       </div>
     </div>
+    {!address&&info?.state!=='FINISHED'&&<div style={{background:'#0d1f14',borderBottom:`1px solid ${G.border}`,padding:'.65rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'1rem',flexShrink:0}}>
+      <div>
+        <div style={{color:'#fbbf24',fontWeight:700,fontSize:'.82rem'}}>👁 Watching only</div>
+        <div style={{color:G.muted2,fontSize:'.72rem'}}>Connect wallet to play</div>
+      </div>
+      <button
+        onClick={connectAndBuyIn}
+        disabled={connectStatus==='connecting'||connectStatus==='paying'||connectStatus==='done'}
+        style={{background:connectStatus==='done'?'#14532d':'linear-gradient(135deg,#f4c430,#d4a017)',color:connectStatus==='done'?'#4ade80':'#000',border:'none',borderRadius:10,padding:'.45rem .9rem',cursor:'pointer',fontWeight:800,fontSize:'.8rem',whiteSpace:'nowrap',opacity:(connectStatus==='connecting'||connectStatus==='paying')?.6:1}}>
+        {connectStatus==='connecting'?'Connecting…':connectStatus==='paying'?'Paying…':connectStatus==='done'?'✓ Joined':'Connect & Buy In →'}
+      </button>
+    </div>}
+    {connectErr&&<div style={{background:'rgba(239,68,68,.1)',borderBottom:`1px solid #b91c1c`,padding:'.4rem 1rem',color:'#f87171',fontSize:'.75rem',flexShrink:0}}>⚠ {connectErr}</div>}
     {info?.state==='LOBBY'&&info?.startAt&&<div style={{background:'linear-gradient(135deg,#14532d,#166534)',padding:'1rem',textAlign:'center',flexShrink:0}}><div style={{color:'#86efac',fontSize:'.8rem'}}>Game starts in</div><div style={{color:'#fff',fontSize:'2.4rem',fontWeight:800}}><Countdown startAt={info.startAt}/></div><div style={{color:'#86efac',fontSize:'.8rem',marginTop:'.2rem'}}>{numP} players seated</div></div>}
     {info?.state==='LOBBY'&&!info?.startAt&&<div style={{padding:'.7rem',textAlign:'center',background:'#78350f',color:'#fbbf24',fontSize:'.85rem',flexShrink:0}}>⏳ Need {Math.max(0,3-numP)} more player{3-numP!==1?'s':''} to start...</div>}
     {isMyTurn&&<div className="my-turn-glow" style={{background:'rgba(52,211,153,.15)',borderBottom:'1px solid rgba(52,211,153,.3)',padding:'.45rem',textAlign:'center',flexShrink:0,color:'#34d399',fontWeight:800,fontSize:'.88rem',letterSpacing:'.04em'}}>🟢 YOUR TURN</div>}
@@ -717,6 +756,6 @@ export default function Page(){
     {!ready&&<LoadingScreen onDone={()=>setReady(true)}/>}
     {ready&&screen==='landing'&&<LandingPage wallet={wallet} onConnected={handleConnected}/>}
     {ready&&screen==='lobby'  &&<Lobby address={wallet.address} username={username} wallet={wallet} onJoined={handleJoined}/>}
-    {ready&&screen==='game'   &&<GameTable tableId={tableId} address={wallet.address} username={username} humanPlayerId={humanPlayerId} buyInUSD={buyInUSD} onBack={()=>setScreen('lobby')} onPlayAgain={()=>setScreen('lobby')}/>}
+    {ready&&screen==='game'   &&<GameTable tableId={tableId} address={wallet.address} username={username} humanPlayerId={humanPlayerId} buyInUSD={buyInUSD} wallet={wallet} onBack={()=>setScreen('lobby')} onPlayAgain={()=>setScreen('lobby')}/>}
   </>;
 }
