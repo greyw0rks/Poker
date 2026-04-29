@@ -426,21 +426,29 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,onBack,onPla
 function DifficultyModal({username,address,wallet,onStarted,onClose}){
   const [loading,setLoading]=useState(false);
   const [selectedToken,setSelectedToken]=useState(DEFAULT_TOKEN);
+  const [walletErr,setWalletErr]=useState('');
   const start=async(diff)=>{
+    // Hard block — wallet must be connected before any game can start
+    if(!address||!window.ethereum){
+      // Try to connect first (covers MiniPay race condition on returning users)
+      setWalletErr('');
+      const addr=await wallet?.connect?.();
+      if(!addr){setWalletErr('Connect your wallet to play.');return;}
+    }
+    const playerAddress=address||(await wallet?.connect?.());
+    if(!playerAddress){setWalletErr('Connect your wallet to play.');return;}
+    setWalletErr('');
     setLoading(diff.id);
     try{
       // 1. Collect buy-in on-chain FIRST — wallet prompts the player here
-      let txHash=null;
-      if(address&&window.ethereum&&wallet?.payBuyIn){
-        const tx=await wallet.payBuyIn(diff.buyIn,address,TOKENS[selectedToken].address);
-        if(!tx.ok){
-          if(tx.error==='User rejected the request.'){setLoading(null);return;}
-          throw new Error('Payment failed: '+tx.error);
-        }
-        txHash=tx.hash;
+      const tx=await wallet.payBuyIn(diff.buyIn,playerAddress,TOKENS[selectedToken].address);
+      if(!tx.ok){
+        if(tx.error==='User rejected the request.'){setLoading(null);return;}
+        throw new Error('Payment failed: '+tx.error);
       }
+      const txHash=tx.hash;
       // 2. Create room — backend verifies txHash before seating the player
-      const r=await fetch(`${SERVER}/rooms/create`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hostName:username,difficulty:diff.id,address:address||'0xDEV',txHash})});
+      const r=await fetch(`${SERVER}/rooms/create`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hostName:username,difficulty:diff.id,address:playerAddress,txHash})});
       const d=await r.json();
       if(!d.tableId)throw new Error(d.error||'No tableId');
       onStarted(d.tableId,d.humanPlayerId,diff.buyIn,diff);
@@ -462,7 +470,8 @@ function DifficultyModal({username,address,wallet,onStarted,onClose}){
           <div style={{textAlign:'right'}}><div style={{color:'#f4c430',fontWeight:800,fontSize:'.95rem'}}>${d.buyIn.toFixed(2)}</div><div style={{color:G.muted,fontSize:'.7rem'}}>buy-in</div></div>
         </button>)}
       </div>
-      <div style={{marginTop:'1rem',textAlign:'center',color:G.border,fontSize:'.75rem'}}>You play vs 3 bots · 90% to winner · On-chain</div>
+      {walletErr&&<div style={{marginTop:'.6rem',textAlign:'center',color:'#f87171',fontSize:'.82rem',background:'rgba(239,68,68,.1)',padding:'.5rem',borderRadius:8}}>⚠ {walletErr}</div>}
+      <div style={{marginTop:'.5rem',textAlign:'center',color:G.border,fontSize:'.75rem'}}>You play vs 3 bots · 90% to winner · On-chain</div>
     </div>
   </div>;
 }
