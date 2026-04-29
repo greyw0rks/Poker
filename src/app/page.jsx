@@ -20,6 +20,26 @@ const DIFFICULTIES = [
   { id:'super',  label:'Super',  emoji:'💀', buyIn:1.00, desc:'3 GTO bots',        color:'#f87171', bg:'#7f1d1d' },
 ];
 
+// ── Supported MiniPay stablecoins ────────────────────────────────────────────
+const TOKENS = {
+  USDm: {
+    label:   'USDm',
+    address: '0x765DE816845861e75A25fCA122bb6898B8B1282a', // cUSD on Celo
+    color:   '#34d399',
+  },
+  USDC: {
+    label:   'USDC',
+    address: '0xcebA9300f2b948710d2651d74d2CAa7e55D70E73',
+    color:   '#60a5fa',
+  },
+  USDT: {
+    label:   'USDT',
+    address: '0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e',
+    color:   '#fbbf24',
+  },
+};
+const DEFAULT_TOKEN = 'USDm';
+
 const SEATS = {
   2:[{style:{bottom:'8px',left:'50%',transform:'translateX(-50%)'},fold:'fold-up'},{style:{top:'8px',left:'50%',transform:'translateX(-50%)'},fold:'fold-down'}],
   3:[{style:{bottom:'8px',left:'50%',transform:'translateX(-50%)'},fold:'fold-up'},{style:{top:'8px',right:'20%'},fold:'fold-down'},{style:{top:'8px',left:'20%'},fold:'fold-down'}],
@@ -293,16 +313,16 @@ function useMiniPay(){
   },[]);
   // Direct ERC-20 transfer to the game contract — no onChainTableId needed.
   // The backend verifies this tx hash before seating the player.
-  const payBuyIn=useCallback(async(amountUSD,playerAddress)=>{
+  const payBuyIn=useCallback(async(amountUSD,playerAddress,tokenAddress)=>{
     if(!window.ethereum||!playerAddress)return{ok:false,error:'No wallet'};
     const CONTRACT=process.env.NEXT_PUBLIC_CONTRACT_ADDRESS||'0x4EdB68a7EE036D7438f6E8fcBE43b35539e55Ec3';
-    const CUSD='0x765DE816845861e75A25fCA122bb6898B8B1282a';
+    const TOKEN=tokenAddress||TOKENS.USDm.address;
     const amtWei=BigInt(Math.round(amountUSD*1e18)).toString(16).padStart(64,'0');
     // ERC-20 transfer(address,uint256) selector: 0xa9059cbb
     const data='0xa9059cbb'+CONTRACT.toLowerCase().replace('0x','').padStart(64,'0')+amtWei;
     try{
       setTxStatus('paying');
-      const txHash=await window.ethereum.request({method:'eth_sendTransaction',params:[{from:playerAddress,to:CUSD,data,type:'0x0'}]});
+      const txHash=await window.ethereum.request({method:'eth_sendTransaction',params:[{from:playerAddress,to:TOKEN,data,type:'0x0'}]});
       await waitForTx(txHash);
       setTxStatus('done');
       return{ok:true,hash:txHash};
@@ -405,13 +425,14 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,onBack,onPla
 // ─── DifficultyModal ──────────────────────────────────────────────────────────
 function DifficultyModal({username,address,wallet,onStarted,onClose}){
   const [loading,setLoading]=useState(false);
+  const [selectedToken,setSelectedToken]=useState(DEFAULT_TOKEN);
   const start=async(diff)=>{
     setLoading(diff.id);
     try{
       // 1. Collect buy-in on-chain FIRST — wallet prompts the player here
       let txHash=null;
       if(address&&window.ethereum&&wallet?.payBuyIn){
-        const tx=await wallet.payBuyIn(diff.buyIn,address);
+        const tx=await wallet.payBuyIn(diff.buyIn,address,TOKENS[selectedToken].address);
         if(!tx.ok){
           if(tx.error==='User rejected the request.'){setLoading(null);return;}
           throw new Error('Payment failed: '+tx.error);
@@ -430,6 +451,9 @@ function DifficultyModal({username,address,wallet,onStarted,onClose}){
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem'}}>
         <div style={{fontWeight:800,fontSize:'1.1rem',color:'#f4c430'}}>🎮 Choose Difficulty</div>
         <button onClick={onClose} style={{background:'none',border:'none',color:G.muted,cursor:'pointer',fontSize:'1.2rem'}}>✕</button>
+      </div>
+      <div style={{display:'flex',gap:'.4rem',marginBottom:'.75rem'}}>
+        {Object.entries(TOKENS).map(([key,tok])=><button key={key} onClick={()=>setSelectedToken(key)} style={{flex:1,background:selectedToken===key?tok.color:'transparent',color:selectedToken===key?'#000':tok.color,border:`1px solid ${tok.color}`,borderRadius:20,padding:'.3rem .5rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem',transition:'all .15s'}}>{tok.label}</button>)}
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:'.6rem'}}>
         {DIFFICULTIES.map(d=><button key={d.id} onClick={()=>start(d)} disabled={!!loading} style={{display:'flex',alignItems:'center',gap:'1rem',padding:'.85rem 1rem',background:G.panel,border:`1px solid ${G.border}`,borderRadius:14,cursor:'pointer',transition:'all .15s',opacity:loading&&loading!==d.id?.5:1}}>
