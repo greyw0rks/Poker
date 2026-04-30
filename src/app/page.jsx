@@ -20,24 +20,11 @@ const DIFFICULTIES = [
   { id:'super',  label:'Super',  emoji:'💀', buyIn:1.00, desc:'3 GTO bots',        color:'#f87171', bg:'#7f1d1d' },
 ];
 
-// ── Supported MiniPay stablecoins ────────────────────────────────────────────
-const TOKENS = {
-  USDm: {
-    label:   'USDm',
-    address: '0x765DE816845861e75A25fCA122bb6898B8B1282a', // cUSD on Celo
-    color:   '#34d399',
-  },
-  USDC: {
-    label:   'USDC',
-    address: '0xcebA9300f2b948710d2651d74d2CAa7e55D70E73',
-    color:   '#60a5fa',
-  },
-  USDT: {
-    label:   'USDT',
-    address: '0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e',
-    color:   '#fbbf24',
-  },
-};
+// ── Payment token: USDm (cUSD) — the only token the contract accepts ─────────
+// USDC/USDT require contract changes (different decimals + token routing).
+const USDM_ADDRESS = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
+// Keep TOKENS/DEFAULT_TOKEN so connectAndBuyIn references don't break
+const TOKENS = { USDm: { label: 'USDm', address: USDM_ADDRESS, color: '#34d399' } };
 const DEFAULT_TOKEN = 'USDm';
 
 const SEATS = {
@@ -363,7 +350,7 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,wallet,onBac
       }
       // 2. Pay buy-in (prompts MiniPay)
       setConnectStatus('paying');
-      const tokenAddr=TOKENS[DEFAULT_TOKEN].address;
+      const tokenAddr=USDM_ADDRESS;
       const tx=await wallet.payBuyIn(buyInUSD||0.2,addr,tokenAddr);
       if(!tx.ok){
         if(tx.error==='User rejected the request.'){setConnectStatus('idle');return;}
@@ -464,7 +451,6 @@ function GameTable({tableId,address,username,humanPlayerId,buyInUSD,wallet,onBac
 // ─── DifficultyModal ──────────────────────────────────────────────────────────
 function DifficultyModal({username,address,wallet,onStarted,onClose}){
   const [loading,setLoading]=useState(false);
-  const [selectedToken,setSelectedToken]=useState(DEFAULT_TOKEN);
   const [walletErr,setWalletErr]=useState('');
   const start=async(diff)=>{
     // Hard block — wallet must be connected before any game can start
@@ -480,7 +466,7 @@ function DifficultyModal({username,address,wallet,onStarted,onClose}){
     setLoading(diff.id);
     try{
       // 1. Collect buy-in on-chain FIRST — wallet prompts the player here
-      const tx=await wallet.payBuyIn(diff.buyIn,playerAddress,TOKENS[selectedToken].address);
+      const tx=await wallet.payBuyIn(diff.buyIn,playerAddress,USDM_ADDRESS);
       if(!tx.ok){
         if(tx.error==='User rejected the request.'){setLoading(null);return;}
         throw new Error('Payment failed: '+tx.error);
@@ -499,8 +485,9 @@ function DifficultyModal({username,address,wallet,onStarted,onClose}){
         <div style={{fontWeight:800,fontSize:'1.1rem',color:'#f4c430'}}>🎮 Choose Difficulty</div>
         <button onClick={onClose} style={{background:'none',border:'none',color:G.muted,cursor:'pointer',fontSize:'1.2rem'}}>✕</button>
       </div>
-      <div style={{display:'flex',gap:'.4rem',marginBottom:'.75rem'}}>
-        {Object.entries(TOKENS).map(([key,tok])=><button key={key} onClick={()=>setSelectedToken(key)} style={{flex:1,background:selectedToken===key?tok.color:'transparent',color:selectedToken===key?'#000':tok.color,border:`1px solid ${tok.color}`,borderRadius:20,padding:'.3rem .5rem',cursor:'pointer',fontWeight:700,fontSize:'.78rem',transition:'all .15s'}}>{tok.label}</button>)}
+      <div style={{display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'.6rem',color:G.muted2,fontSize:'.75rem'}}>
+        <span style={{background:'#14532d',color:'#4ade80',borderRadius:20,padding:'.2rem .6rem',fontWeight:700}}>USDm</span>
+        <span>Only supported token · cUSD on Celo</span>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:'.6rem'}}>
         {DIFFICULTIES.map(d=><button key={d.id} onClick={()=>start(d)} disabled={!!loading} style={{display:'flex',alignItems:'center',gap:'1rem',padding:'.85rem 1rem',background:G.panel,border:`1px solid ${G.border}`,borderRadius:14,cursor:'pointer',transition:'all .15s',opacity:loading&&loading!==d.id?.5:1}}>
@@ -575,7 +562,7 @@ function Lobby({address,username,wallet,onJoined}){
         <div><div style={{fontSize:'1.6rem',fontWeight:900,color:'#f4c430',letterSpacing:'-.02em'}}>♠ CeloPoker</div><div style={{fontSize:'.78rem',color:G.border,marginTop:'.1rem'}}>No-Limit Texas Hold'em · Celo Mainnet</div></div>
         <div style={{textAlign:'right'}}>
           {address?<><div style={{background:'#14532d',color:'#4ade80',padding:'.25rem .6rem',borderRadius:20,fontSize:'.72rem',fontWeight:700,marginBottom:'.2rem'}}>🟢 Connected</div><div style={{color:G.muted,fontSize:'.7rem'}}>{address.slice(0,6)}...{address.slice(-4)}</div></>
-          :<div style={{background:G.panel,color:G.muted2,padding:'.25rem .6rem',borderRadius:20,fontSize:'.72rem',fontWeight:700}}>No Wallet</div>}
+          :<button onClick={()=>wallet?.connect?.()} style={{background:'linear-gradient(135deg,#f4c430,#d4a017)',color:'#000',border:'none',borderRadius:20,padding:'.3rem .75rem',fontSize:'.75rem',fontWeight:800,cursor:'pointer',letterSpacing:'.02em'}}>Connect Wallet</button>}
         </div>
       </div>
       {stats&&stats.sessions>0&&<div style={{display:'flex',gap:'.6rem',marginBottom:'.75rem'}}>
