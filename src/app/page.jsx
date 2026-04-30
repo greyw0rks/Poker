@@ -730,10 +730,10 @@ export default function Page(){
     document.head.appendChild(el);
   },[]);
 
-  // skip landing if returning user
+  // restore username only — user must always go through landing to connect wallet
   useEffect(()=>{
     const u=localStorage.getItem('poker_username');
-    if(u){setUsername(u);setScreen('lobby');}
+    if(u){setUsername(u);}
   },[]);
 
   const handleConnected=(addr,name)=>{setUsername(name);setScreen('lobby');};
