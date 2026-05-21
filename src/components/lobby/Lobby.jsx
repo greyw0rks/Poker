@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const SERVER_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+const SERVER_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://poker-backend-qwyz.onrender.com';
 
 function formatTimeLeft(seconds) {
   if (!seconds) return '--:--';

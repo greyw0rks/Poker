@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 
-const SERVER_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+const SERVER_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://poker-backend-qwyz.onrender.com';
 
 const INITIAL_STATE = {
   tableId:     null,
